@@ -41,19 +41,35 @@ async function main() {
 
   const uid = {}; // username -> profile id
   for (const u of usersToCreate) {
+    let userId;
     const { data, error } = await supabase.auth.admin.createUser({
       email: u.email,
       password: TEST_PASSWORD,
       email_confirm: true,
       user_metadata: { username: u.username },
     });
-    if (error) throw new Error(`createUser(${u.email}): ${error.message}`);
-    uid[u.username] = data.user.id;
+
+    if (error) {
+      if (!error.message.includes('already been registered')) {
+        throw new Error(`createUser(${u.email}): ${error.message}`);
+      }
+      // Already exists from a previous run — look it up and reuse it.
+      const { data: list, error: listErr } = await supabase.auth.admin.listUsers();
+      if (listErr) throw new Error(`listUsers lookup for ${u.email}: ${listErr.message}`);
+      const existing = list.users.find((usr) => usr.email === u.email);
+      if (!existing) throw new Error(`Could not find existing user for ${u.email} after duplicate error`);
+      userId = existing.id;
+      console.log(`   ${u.email} already exists — reusing`);
+    } else {
+      userId = data.user.id;
+    }
+
+    uid[u.username] = userId;
 
     const { error: updErr } = await supabase
       .from('profiles')
       .update({ display_name: u.display_name })
-      .eq('id', data.user.id);
+      .eq('id', userId);
     if (updErr) throw new Error(`update display_name(${u.username}): ${updErr.message}`);
   }
   console.log('   done —', Object.keys(uid).length, 'users');
@@ -179,12 +195,15 @@ async function main() {
       reading_time_minutes: 8,
     },
   ];
-  const { data: posts, error: postErr } = await supabase.from('posts').insert(postSeed).select();
+  const { data: posts, error: postErr } = await supabase
+    .from('posts')
+    .upsert(postSeed, { onConflict: 'slug' })
+    .select();
   if (postErr) throw postErr;
   const postId = (slug) => posts.find((p) => p.slug === slug).id;
 
   console.log('6/8 Seeding post_tags, comments, reactions, saved_posts...');
-  await supabase.from('post_tags').insert([
+  await supabase.from('post_tags').upsert([
     { post_id: postId('postgres-full-text-search'), tag_id: tagId('supabase') },
     { post_id: postId('postgres-full-text-search'), tag_id: tagId('nodejs') },
     { post_id: postId('demystifying-transformers'), tag_id: tagId('machine-learning') },
@@ -194,7 +213,7 @@ async function main() {
     { post_id: postId('first-tech-internship-prep'), tag_id: tagId('career-advice') },
     { post_id: postId('hackathon-recap'), tag_id: tagId('hackathon') },
     { post_id: postId('hackathon-recap'), tag_id: tagId('javascript') },
-  ]);
+  ], { onConflict: 'post_id,tag_id' });
 
   const { data: comment1 } = await supabase
     .from('comments')
