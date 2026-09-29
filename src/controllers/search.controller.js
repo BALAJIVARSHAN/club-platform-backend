@@ -1,9 +1,3 @@
-// Owner: m5 (Balaji)
-// Day 4: posts and debates now use ranked full-text search (tsvector +
-// ts_rank via the search_posts/search_debates Postgres functions —
-// see db/migrations/002_search_fts.sql). Users and tags stay on ILIKE
-// since short name fields don't benefit from full-text ranking.
-
 const PAGE_SIZE_DEFAULT = 10;
 const PAGE_SIZE_MAX = 50;
 const VALID_TYPES = ['posts', 'debates', 'users', 'tags'];
@@ -15,11 +9,6 @@ function getPagination(req) {
   return { page, limit, from };
 }
 
-// Only needed for the ILIKE .or() queries below (users/tags) — `,` `(`
-// `)` `%` have special meaning in PostgREST's filter syntax when
-// concatenated into a string like this. The FTS RPC calls don't need
-// this: websearch_to_tsquery takes the raw term as a parameter, not a
-// concatenated string, so there's nothing to escape.
 function sanitizeTerm(raw) {
   return raw.replace(/[,()%]/g, ' ').trim();
 }
@@ -68,8 +57,6 @@ async function searchTags(supabase, q, { limit, from }) {
   return { data, count };
 }
 
-// GET /api/search?q=...&type=posts|debates|users|tags&page=&limit=
-// Omitting `type` searches all four and returns them grouped.
 async function search(req, res, next) {
   try {
     const rawQ = (req.query.q || '').trim();
@@ -105,7 +92,6 @@ async function search(req, res, next) {
       });
     }
 
-    // No type — search everything in parallel, first page of each only.
     const slice = { limit: pagination.limit, from: 0 };
     const [posts, debates, users, tags] = await Promise.all([
       searchPosts(supabase, rawQ, slice),

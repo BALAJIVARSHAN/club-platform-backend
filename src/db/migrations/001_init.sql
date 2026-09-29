@@ -1,15 +1,5 @@
--- ============================================================
--- Club Community & Blogging Platform — Initial Migration
--- Generated from club_platform_schema.dbml (reviewed version)
--- Target: Supabase (Postgres)
--- ============================================================
-
--- ---------- EXTENSIONS ----------
 create extension if not exists "pgcrypto"; -- gen_random_uuid()
 
--- ============================================================
--- ENUMS
--- ============================================================
 create type user_role as enum ('guest', 'member', 'moderator', 'admin');
 create type post_status as enum ('draft', 'published', 'archived');
 create type debate_status as enum ('open', 'closed');
@@ -17,10 +7,6 @@ create type stance_type as enum ('for', 'against');
 create type reaction_target as enum ('post', 'comment');
 create type report_target as enum ('post', 'comment', 'user', 'debate_argument');
 create type report_status as enum ('pending', 'reviewed', 'actioned', 'dismissed');
-
--- ============================================================
--- CORE / IDENTITY
--- ============================================================
 
 create table roles (
   id serial primary key,
@@ -44,10 +30,6 @@ create table profiles (
   created_at timestamp default now(),
   updated_at timestamp default now()
 );
-
--- ============================================================
--- CONTENT
--- ============================================================
 
 create table categories (
   id serial primary key,
@@ -123,18 +105,12 @@ create table reactions (
   unique (user_id, target_type, target_id, reaction_type)
 );
 
--- Added during schema review: proposal's dashboard site map lists
--- "Saved Posts" but no table existed for it in the original DBML.
 create table saved_posts (
   user_id uuid not null references profiles(id) on delete cascade,
   post_id uuid not null references posts(id) on delete cascade,
   created_at timestamp default now(),
   primary key (user_id, post_id)
 );
-
--- ============================================================
--- DEBATES
--- ============================================================
 
 create table debates (
   id uuid primary key default gen_random_uuid(),
@@ -180,10 +156,6 @@ create table debate_replies (
   content text not null,
   created_at timestamp default now()
 );
-
--- ============================================================
--- GAMIFICATION (FUTURE — Phase 5, schema only, do not build on yet)
--- ============================================================
 
 create table games (
   id uuid primary key default gen_random_uuid(),
@@ -239,10 +211,6 @@ create table user_badges (
   unique (user_id, badge_id)
 );
 
--- ============================================================
--- ENGAGEMENT & ADMIN
--- ============================================================
-
 create table notifications (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references profiles(id) on delete cascade, -- recipient
@@ -276,11 +244,6 @@ create table announcements (
   created_at timestamp default now()
 );
 
--- ============================================================
--- FUNCTIONS & TRIGGERS
--- ============================================================
-
--- Generic updated_at bumper
 create or replace function set_updated_at()
 returns trigger as $$
 begin
@@ -298,7 +261,6 @@ create trigger trg_comments_updated_at before update on comments
 create trigger trg_debates_updated_at before update on debates
   for each row execute function set_updated_at();
 
--- Auto-create a profile row when a new auth.users row is created
 create or replace function handle_new_user()
 returns trigger as $$
 declare
@@ -320,18 +282,12 @@ create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function handle_new_user();
 
--- Helper: resolve a user's role name (used in RLS policies below)
 create or replace function get_user_role(uid uuid)
 returns user_role as $$
   select r.name from public.profiles p
   join public.roles r on p.role_id = r.id
   where p.id = uid;
 $$ language sql stable security definer set search_path = public;
-
--- ============================================================
--- ROW LEVEL SECURITY
--- Pattern: public read, owner-only write, admin/moderator override
--- ============================================================
 
 alter table roles enable row level security;
 alter table profiles enable row level security;
@@ -357,15 +313,12 @@ alter table notifications enable row level security;
 alter table reports enable row level security;
 alter table announcements enable row level security;
 
--- roles: public read, no user writes
 create policy roles_select on roles for select using (true);
 
--- profiles: public read, owner-only write
 create policy profiles_select on profiles for select using (true);
 create policy profiles_insert on profiles for insert with check (auth.uid() = id);
 create policy profiles_update on profiles for update using (auth.uid() = id);
 
--- categories / tags: public read, admin-only write
 create policy categories_select on categories for select using (true);
 create policy categories_write on categories for all
   using (get_user_role(auth.uid()) = 'admin')
@@ -375,7 +328,6 @@ create policy tags_write on tags for all
   using (get_user_role(auth.uid()) in ('admin', 'moderator'))
   with check (get_user_role(auth.uid()) in ('admin', 'moderator'));
 
--- posts: published posts public; draft visible to owner; owner-only write
 create policy posts_select on posts for select
   using (status = 'published' or author_id = auth.uid());
 create policy posts_insert on posts for insert with check (author_id = auth.uid());
@@ -384,7 +336,6 @@ create policy posts_update on posts for update
 create policy posts_delete on posts for delete
   using (author_id = auth.uid() or get_user_role(auth.uid()) in ('admin', 'moderator'));
 
--- post_images / post_tags: follow the parent post's visibility, owner-only write
 create policy post_images_select on post_images for select using (true);
 create policy post_images_write on post_images for all
   using (exists (select 1 from posts p where p.id = post_id and p.author_id = auth.uid()))
@@ -395,30 +346,25 @@ create policy post_tags_write on post_tags for all
   using (exists (select 1 from posts p where p.id = post_id and p.author_id = auth.uid()))
   with check (exists (select 1 from posts p where p.id = post_id and p.author_id = auth.uid()));
 
--- comments: public read, owner-only write
 create policy comments_select on comments for select using (true);
 create policy comments_insert on comments for insert with check (author_id = auth.uid());
 create policy comments_update on comments for update using (author_id = auth.uid());
 create policy comments_delete on comments for delete
   using (author_id = auth.uid() or get_user_role(auth.uid()) in ('admin', 'moderator'));
 
--- reactions: public read, owner-only write/delete
 create policy reactions_select on reactions for select using (true);
 create policy reactions_insert on reactions for insert with check (user_id = auth.uid());
 create policy reactions_delete on reactions for delete using (user_id = auth.uid());
 
--- saved_posts: private to the owner
 create policy saved_posts_select on saved_posts for select using (user_id = auth.uid());
 create policy saved_posts_insert on saved_posts for insert with check (user_id = auth.uid());
 create policy saved_posts_delete on saved_posts for delete using (user_id = auth.uid());
 
--- debates: public read, owner-only write
 create policy debates_select on debates for select using (true);
 create policy debates_insert on debates for insert with check (created_by = auth.uid());
 create policy debates_update on debates for update
   using (created_by = auth.uid() or get_user_role(auth.uid()) in ('admin', 'moderator'));
 
--- debate_arguments / votes / replies: public read, owner-only write
 create policy debate_arguments_select on debate_arguments for select using (true);
 create policy debate_arguments_insert on debate_arguments for insert with check (author_id = auth.uid());
 create policy debate_arguments_delete on debate_arguments for delete
@@ -433,7 +379,6 @@ create policy debate_replies_insert on debate_replies for insert with check (aut
 create policy debate_replies_delete on debate_replies for delete
   using (author_id = auth.uid() or get_user_role(auth.uid()) in ('admin', 'moderator'));
 
--- gamification (future phase, permissive read now, writes locked to admin for now)
 create policy games_select on games for select using (true);
 create policy questions_select on questions for select using (true);
 create policy badges_select on badges for select using (true);
@@ -442,23 +387,17 @@ create policy game_attempts_insert on game_attempts for insert with check (user_
 create policy streaks_select on streaks for select using (user_id = auth.uid());
 create policy user_badges_select on user_badges for select using (true);
 
--- notifications: recipient-only
 create policy notifications_select on notifications for select using (user_id = auth.uid());
 create policy notifications_update on notifications for update using (user_id = auth.uid());
 
--- reports: reporter can create/see own; moderators/admins see all
 create policy reports_select on reports for select
   using (reporter_id = auth.uid() or get_user_role(auth.uid()) in ('admin', 'moderator'));
 create policy reports_insert on reports for insert with check (reporter_id = auth.uid());
 create policy reports_update on reports for update
   using (get_user_role(auth.uid()) in ('admin', 'moderator'));
 
--- announcements: public read, admin-only write
 create policy announcements_select on announcements for select using (true);
 create policy announcements_write on announcements for all
   using (get_user_role(auth.uid()) = 'admin')
   with check (get_user_role(auth.uid()) = 'admin');
 
--- ============================================================
--- END OF MIGRATION
--- ============================================================

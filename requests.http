@@ -1,0 +1,53 @@
+### Club Platform Backend — Request Collection
+### Requires the "REST Client" VS Code extension (huachao.rest-client).
+### Click "Send Request" above any block below to run it.
+
+@baseUrl = http://localhost:4000
+@supabaseUrl = https://YOUR-PROJECT-REF.supabase.co
+@anonKey = YOUR_SUPABASE_ANON_KEY
+
+### Health check
+GET {{baseUrl}}/health
+
+### --- Get a test auth token (Alice — promoted to admin) ---
+# @name login
+POST {{supabaseUrl}}/auth/v1/token?grant_type=password
+apikey: {{anonKey}}
+Content-Type: application/json
+
+{
+  "email": "alice@clubplatform.test",
+  "password": "TestPass123!"
+}
+
+### Search — all types
+GET {{baseUrl}}/api/search?q=postgres
+
+### Search — posts only, paginated
+GET {{baseUrl}}/api/search?q=react&type=posts&page=1&limit=5
+
+### Search — debates only
+GET {{baseUrl}}/api/search?q=platform&type=debates
+
+### Search — users only
+GET {{baseUrl}}/api/search?q=alice&type=users
+
+### Search — tags only
+GET {{baseUrl}}/api/search?q=java&type=tags
+
+### Search — phrase syntax
+GET {{baseUrl}}/api/search?q="full-text search"&type=posts
+
+### Search — exclusion syntax
+GET {{baseUrl}}/api/search?q=transformers -career&type=posts
+
+### Search — validation: missing q (expect 400)
+GET {{baseUrl}}/api/search
+
+### Search — validation: invalid type (expect 400)
+GET {{baseUrl}}/api/search?q=test&type=invalid
+
+### --- Authenticated example (once a route needs it) ---
+# Uses the token captured from the "login" request above.
+# GET {{baseUrl}}/api/some-protected-route
+# Authorization: Bearer {{login.response.body.access_token}}

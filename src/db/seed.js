@@ -1,22 +1,3 @@
-// seed.js
-// Seeds the club platform with realistic dummy data for Day 2 testing.
-//
-// Why this uses the Supabase Admin API instead of raw SQL inserts:
-// `profiles.id` is a FK to `auth.users.id`, and auth.users has a lot of
-// internal, version-sensitive columns (encrypted_password, tokens, etc).
-// Going through supabase.auth.admin.createUser() creates real, valid auth
-// users, which fires your handle_new_user() trigger and auto-creates a
-// matching `profiles` row — exactly like real signup would.
-//
-// Setup:
-//   npm install @supabase/supabase-js dotenv
-//   cp .env.example .env   (fill in your values — see below)
-//   node seed.js
-//
-// Get SUPABASE_SERVICE_ROLE_KEY from Project Settings -> API -> service_role
-// (NOT the anon key — this script needs elevated access to bypass RLS and
-// create users). Never commit this key or use it in frontend code.
-
 require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
 

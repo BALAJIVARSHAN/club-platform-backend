@@ -1,12 +1,8 @@
-// Owner: m3
-// Base path: /api/debates
-// TODO(m3): implement real handlers here.
-
 const express = require('express');
 const router = express.Router();
 
 router.get('/', (req, res) => {
-  res.json({ message: '/api/debates route stub — not implemented yet', owner: 'm3' });
+  res.json({ message: '/api/debates not implemented yet' });
 });
 
 module.exports = router;
